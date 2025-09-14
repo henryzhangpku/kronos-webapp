@@ -95,7 +95,7 @@ class KronosWebAPI:
             result = run_kronos_future_prediction(
                 symbol=symbol.upper(),
                 data_type=asset_type,
-                pred_length=pred_length
+                pred_len=pred_length
             )
             
             if not result['success']:
