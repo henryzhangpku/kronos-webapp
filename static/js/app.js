@@ -306,14 +306,40 @@ class KronosApp {
 
     setLoading(loading, text = 'Processing...', subtext = 'Please wait') {
         this.isLoading = loading;
-        const modal = new bootstrap.Modal(document.getElementById('loadingModal'));
+        const modalElement = document.getElementById('loadingModal');
         
         if (loading) {
             document.getElementById('loadingText').textContent = text;
             document.getElementById('loadingSubtext').textContent = subtext;
+            
+            // Show modal
+            const modal = new bootstrap.Modal(modalElement, {
+                backdrop: 'static',
+                keyboard: false
+            });
             modal.show();
+            
+            // Store modal instance for later use
+            modalElement._modalInstance = modal;
         } else {
-            modal.hide();
+            // Hide modal with delay to ensure content is updated first
+            setTimeout(() => {
+                const modal = modalElement._modalInstance || bootstrap.Modal.getInstance(modalElement);
+                if (modal) {
+                    modal.hide();
+                }
+                
+                // Force hide backdrop if it still exists
+                setTimeout(() => {
+                    const backdrop = document.querySelector('.modal-backdrop');
+                    if (backdrop) {
+                        backdrop.remove();
+                    }
+                    document.body.classList.remove('modal-open');
+                    document.body.style.removeProperty('overflow');
+                    document.body.style.removeProperty('padding-right');
+                }, 100);
+            }, 100);
         }
         
         this.updateUI();

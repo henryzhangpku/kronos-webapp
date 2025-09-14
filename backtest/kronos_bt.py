@@ -41,7 +41,7 @@ def run_kronos_prediction(symbol: str, data_type: str, lookback: int = 400, pred
         # Determine symbol format for yfinance
         if data_type == 'crypto':
             # Try multiple crypto symbol formats
-            possible_symbols = [f"{symbol}-USD", f"{symbol}USD", symbol]
+            possible_symbols = [f"{symbol}-USD", f"{symbol}USD"]
         else:
             possible_symbols = [symbol]
             
@@ -53,75 +53,43 @@ def run_kronos_prediction(symbol: str, data_type: str, lookback: int = 400, pred
         end_date = datetime.now()
         start_date = end_date - timedelta(days=total_periods_needed + 200)  # Extra buffer
         
-        # Try different symbol formats until we find data
+        # Try different symbol formats with more aggressive retries
         for yf_symbol in possible_symbols:
-            try:
-                logger.info(f"Trying to fetch historical data for {yf_symbol}")
-                
-                ticker = yf.Ticker(yf_symbol)
-                all_data = ticker.history(start=start_date, end=end_date, interval='1d', timeout=10)
-                
-                if not all_data.empty:
-                    successful_symbol = yf_symbol
-                    logger.info(f"Successfully fetched data using symbol: {yf_symbol}")
-                    break
-                else:
-                    logger.warning(f"No data returned for symbol: {yf_symbol}")
+            for attempt in range(3):  # Try 3 times for each symbol
+                try:
+                    logger.info(f"Attempt {attempt + 1}: Fetching real market data for {yf_symbol}")
                     
-            except Exception as e:
-                logger.warning(f"Failed to fetch data for {yf_symbol}: {e}")
-                continue
-        
-        # If no data found with any symbol format, try generating mock data for demo
-        if all_data.empty:
-            logger.warning(f"Could not fetch real data for {symbol}, generating mock data for demo")
-            
-            # Generate realistic mock data
-            dates = pd.date_range(start=start_date, end=end_date, freq='D')
-            
-            # Set base price based on common asset ranges
-            if data_type == 'crypto':
-                if symbol in ['BTC', 'BITCOIN']:
-                    base_price = 45000
-                elif symbol in ['ETH', 'ETHEREUM']:
-                    base_price = 2500
-                else:
-                    base_price = 100
-            else:
-                base_price = 150  # Typical stock price
-            
-            # Generate realistic price evolution
-            np.random.seed(42)
-            prices = [base_price]
-            
-            for i in range(1, len(dates)):
-                # Add trend, volatility, and some cycles
-                trend = 0.0001  # Slight upward trend
-                volatility = 0.02 if data_type == 'stock' else 0.04  # Crypto more volatile
-                cycle = 0.001 * np.sin(2 * np.pi * i / 30)  # 30-day cycle
-                
-                daily_return = trend + cycle + np.random.normal(0, volatility)
-                new_price = prices[-1] * (1 + daily_return)
-                prices.append(max(new_price, 0.01))  # Ensure positive prices
-            
-            # Create DataFrame
-            all_data = pd.DataFrame({
-                'Close': prices,
-                'Open': [p * (1 + np.random.normal(0, 0.005)) for p in prices],
-                'High': [p * (1 + abs(np.random.normal(0, 0.01))) for p in prices],
-                'Low': [p * (1 - abs(np.random.normal(0, 0.01))) for p in prices],
-                'Volume': [1000000 * (1 + np.random.normal(0, 0.3)) for _ in prices]
-            }, index=dates)
-            
-            # Ensure high >= close >= low
-            all_data['High'] = np.maximum(all_data['High'], all_data['Close'])
-            all_data['Low'] = np.minimum(all_data['Low'], all_data['Close'])
-            
-            successful_symbol = f"{symbol} (mock data)"
-            logger.info(f"Generated {len(all_data)} mock data points for {symbol}")
+                    ticker = yf.Ticker(yf_symbol)
+                    all_data = ticker.history(
+                        start=start_date, 
+                        end=end_date, 
+                        interval='1d',
+                        timeout=30,  # Longer timeout
+                        proxy=None,
+                        threads=True
+                    )
+                    
+                    if not all_data.empty and len(all_data) >= lookback + pred_len:
+                        successful_symbol = yf_symbol
+                        logger.info(f"✅ Successfully fetched {len(all_data)} real data points using symbol: {yf_symbol}")
+                        break
+                    else:
+                        logger.warning(f"Insufficient data for {yf_symbol} (got {len(all_data)} points, need {lookback + pred_len})")
+                        all_data = pd.DataFrame()  # Reset for next attempt
+                        
+                except Exception as e:
+                    logger.warning(f"Attempt {attempt + 1} failed for {yf_symbol}: {e}")
+                    if attempt < 2:  # Don't sleep on last attempt
+                        import time
+                        time.sleep(2)  # Wait before retry
+                    continue
+                    
+            if not all_data.empty:
+                break  # Found data, stop trying other symbols
 
+        # If still no data, this is a real error - don't use fake data
         if all_data.empty:
-            error_msg = f"No historical data available for {symbol} and could not generate mock data"
+            error_msg = f"Unable to fetch real market data for {symbol}. Please check symbol or try again later."
             logger.error(error_msg)
             return {
                 'success': False,

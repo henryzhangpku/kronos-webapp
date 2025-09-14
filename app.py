@@ -59,6 +59,10 @@ class KronosWebAPI:
         # Set to True since we have self-contained modules
         self.kronos_available = True
         
+    def get_currency_symbol(self, asset_type):
+        """Get currency symbol for price axis"""
+        return 'USD' if asset_type == 'crypto' else 'USD'
+        
     def get_available_symbols(self, asset_type):
         """Get list of available symbols for given asset type"""
         base_symbols = self.popular_stocks if asset_type == 'stock' else self.popular_crypto
@@ -108,26 +112,43 @@ class KronosWebAPI:
             
             # Plot historical data
             hist_data = result['historical_data'].tail(200)  # Show last 200 points
-            plt.plot(range(len(hist_data)), hist_data['close'].values, 
+            hist_dates = hist_data.index
+            
+            # Create date range for the entire plot
+            pred_data = result['predictions']
+            pred_dates = pred_data.index
+            
+            # Plot historical data with actual dates
+            plt.plot(hist_dates, hist_data['close'].values, 
                     label='Historical', color='#4285f4', linewidth=2)
             
-            # Plot prediction
-            pred_data = result['predictions']
-            pred_start = len(hist_data)
-            pred_range = range(pred_start, pred_start + len(pred_data))
-            plt.plot(pred_range, pred_data['close'].values, 
+            # Plot prediction with actual dates
+            plt.plot(pred_dates, pred_data['close'].values, 
                     label='Prediction', color='#34a853', linewidth=2, linestyle='--')
             
             plt.title(f'{symbol} - {pred_length} Period Prediction', 
                      fontsize=16, color='white', pad=20)
-            plt.xlabel('Time Period', fontsize=12, color='white')
-            plt.ylabel('Price', fontsize=12, color='white')
+            plt.xlabel('Date', fontsize=12, color='white')
+            plt.ylabel(f'Price ({self.get_currency_symbol(asset_type)})', fontsize=12, color='white')
             plt.legend(fontsize=12)
             plt.grid(True, alpha=0.3)
+            
+            # Format x-axis dates
+            plt.gca().tick_params(axis='x', rotation=45)
+            
+            # Format y-axis prices
+            from matplotlib.ticker import FuncFormatter
+            def price_formatter(x, pos):
+                if x >= 1000:
+                    return f'${x:,.0f}'
+                else:
+                    return f'${x:.2f}'
+            plt.gca().yaxis.set_major_formatter(FuncFormatter(price_formatter))
             
             # Style the plot
             plt.gca().set_facecolor('#1a1a1a')
             plt.gcf().patch.set_facecolor('#1a1a1a')
+            plt.tight_layout()
             
             # Convert to base64
             img_buffer = BytesIO()
